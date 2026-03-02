@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# OS files
+.DS_Store
+
+# build outputs
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# env files
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+BE-technical-test.md
