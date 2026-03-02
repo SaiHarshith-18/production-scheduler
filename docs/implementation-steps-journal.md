@@ -64,6 +64,74 @@ If input data misses required fields (for example, `dependsOnWorkOrderIds`), Typ
 
 ---
 
+## Step 3 - UTC Date Utilities and Shift-Aware Scheduling Helpers (Executed)
+
+### What
+Implemented date utility functions in:
+- `src/utils/date-utils.ts`
+- `src/luxon.d.ts`
+
+Added:
+- UTC helpers:
+  - `parseUtcDate`
+  - `formatUtcDate`
+- Shift/maintenance checks:
+  - `isWithinShift`
+  - `isDuringMaintenance`
+- Availability helper:
+  - `getNextWorkingMoment`
+- Core shift-aware end-date calculator:
+  - `calculateEndDateWithShifts(startDate, durationMinutes, shifts, maintenanceWindows?)`
+- Module compatibility update:
+  - `package.json` set to `"type": "module"` for ESM-friendly exports/imports
+
+### How
+Used Luxon to normalize all calculations to UTC, built helpers to find current/next valid shift windows by `dayOfWeek` and hour ranges, and layered maintenance-window blocking on top of shift logic.  
+The end-date function now consumes only working minutes, pauses outside shifts, skips maintenance intervals, and resumes at the next valid working moment.
+Added a local Luxon type declaration file so TypeScript can type-check utility code in this environment.
+
+### Why
+Shift and maintenance handling is the most error-prone part of the scheduler, so this was isolated into dedicated utilities before implementing the main reflow algorithm.  
+This keeps the service logic simpler and ensures time calculations are consistent and reusable across scheduling and validation.
+
+### Use Case
+For a 120-minute job starting Monday 4:00 PM with a Monday-Friday 8:00 AM-5:00 PM shift, the utility can consume 60 minutes on Monday, pause overnight, resume Tuesday 8:00 AM, and complete at 9:00 AM (while also skipping any maintenance window that intersects that execution window).
+
+---
+
+## Step 4 - Baseline Reflow Service Pipeline (Executed)
+
+### What
+Implemented baseline reflow orchestration in:
+- `src/reflow/reflow.service.ts`
+
+Added:
+- `ReflowService` class with `reflow(input: ReflowInput): ReflowResult`
+- Work center lookup map for scheduling by `workCenterId`
+- Scheduling path for non-maintenance work orders using Step 3 utilities
+- Explicit skip behavior for maintenance work orders (unchanged)
+- Change-tracking records (`changes`) with moved minutes and reason text
+- Baseline explanation output summarizing what was adjusted
+
+### How
+The service iterates all work orders in input order.  
+For each non-maintenance work order, it:
+1. Resolves the referenced work center
+2. Aligns start time to the next valid working moment
+3. Recalculates end time using shift/maintenance-aware duration logic
+4. Compares old vs new schedule and records a change entry if needed
+
+Maintenance work orders are passed through unchanged.
+
+### Why
+This establishes a runnable end-to-end baseline pipeline that uses the time engine from Step 3 and produces required output contracts (`updatedWorkOrders`, `changes`, `explanation`).  
+It keeps dependency resolution and work-center conflict resolution for upcoming steps while still delivering a valid service structure.
+
+### Use Case
+If a work order starts outside shift hours, Step 4 now automatically shifts it to the next valid shift time and recalculates completion time around maintenance windows, then records what changed and why.
+
+---
+
 ## Template For Next Steps
 
 Copy this block for every new completed step:
