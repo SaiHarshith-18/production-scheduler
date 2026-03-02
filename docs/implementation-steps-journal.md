@@ -306,6 +306,36 @@ Running `node dist/index.js` after build prints each scenario status, changes ma
 
 ---
 
+## Step 12 - Documentation Completion (Executed)
+
+### What
+Completed required documentation deliverables:
+- Replaced `README.md` with full project documentation
+- Added key code comments in complex scheduling/validation sections:
+  - `src/reflow/reflow.service.ts`
+  - `src/reflow/constraint-checker.ts`
+  - `src/utils/date-utils.ts`
+
+### How
+The README now includes:
+1. setup instructions
+2. run commands
+3. project structure
+4. scenario coverage
+5. high-level algorithm approach
+6. output/error contract notes
+
+Code comments were added only where logic is non-obvious (dependency ordering, center conflict push-forward, defensive validation, shift/maintenance duration consumption).
+
+### Why
+Step 12 requires documentation and key logic explanation quality.  
+This step ensures the repository is understandable for reviewers and runnable without guessing.
+
+### Use Case
+A reviewer can clone/install, run scenarios, understand the algorithm flow from README, and trace complex logic quickly through targeted comments.
+
+---
+
 ## Template For Next Steps
 
 Copy this block for every new completed step:

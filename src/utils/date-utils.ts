@@ -222,6 +222,7 @@ export function calculateEndDateWithShifts(
   let remainingMinutes = durationMinutes;
   let cursor = getNextWorkingMoment(parseUtcDate(startDate), shifts, maintenanceWindows);
 
+  // Consume only working minutes, carrying remaining duration across shifts/maintenance gaps.
   for (let iteration = 0; iteration < 100_000 && remainingMinutes > 0; iteration += 1) {
     const shiftWindow =
       getShiftWindowContaining(cursor, shifts) ?? findNextShiftWindow(cursor, shifts);

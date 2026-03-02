@@ -67,6 +67,7 @@ export class ConstraintChecker {
       }
 
       if (!updatedOrder.data.isMaintenance) {
+        // Recompute expected end date from start + duration to prove shift/maintenance compliance.
         const expectedEndDate = calculateEndDateWithShifts(
           updatedOrder.data.startDate,
           updatedOrder.data.durationMinutes,

@@ -163,6 +163,7 @@ function buildDependencyOrder(workOrders: WorkOrderDocument[]): string[] {
 
   const ordered: string[] = [];
 
+  // Kahn's algorithm: emits parent-before-child order or detects cycles.
   while (readyQueue.length > 0) {
     const currentId = readyQueue.shift();
     if (!currentId) {
@@ -222,6 +223,7 @@ function seedFixedMaintenanceIntervals(
     }
 
     const centerIntervals = getCenterIntervals(centerScheduleById, workCenter.docId);
+    // Fixed maintenance intervals reserve center capacity before movable work is planned.
     const overlappingInterval = findOverlappingInterval(
       centerIntervals,
       workOrder.data.startDate,
@@ -314,6 +316,7 @@ function scheduleWorkOrderWithCenterConflicts(
       return scheduledWorkOrder;
     }
 
+    // Push start to the blocking interval end and re-run shift/maintenance-aware scheduling.
     candidateStartDate = maxIsoDate(candidateStartDate, overlappingInterval.endDate);
   }
 
@@ -412,6 +415,7 @@ export class ReflowService {
         explanation,
       };
 
+      // Defensive post-check to ensure returned schedule still satisfies all hard constraints.
       validateReflowResult(input, result);
 
       return result;
