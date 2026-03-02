@@ -4,6 +4,7 @@ import {
   getNextWorkingMoment,
   parseUtcDate,
 } from "../utils/date-utils.js";
+import { validateReflowResult } from "./constraint-checker.js";
 import type {
   ISODateString,
   ReflowInput,
@@ -18,6 +19,13 @@ interface CenterScheduleInterval {
   startDate: ISODateString;
   endDate: ISODateString;
   isFixed: boolean;
+}
+
+export class ImpossibleScheduleError extends Error {
+  constructor(reason: string) {
+    super(`No valid schedule: ${reason}`);
+    this.name = "ImpossibleScheduleError";
+  }
 }
 
 function getWorkCenterById(workCenters: WorkCenterDocument[]): Map<string, WorkCenterDocument> {
@@ -37,6 +45,14 @@ function calculateMovedMinutes(previousIso: string, nextIso: string): number {
 
 function maxIsoDate(a: ISODateString, b: ISODateString): ISODateString {
   return parseUtcDate(a).toMillis() >= parseUtcDate(b).toMillis() ? a : b;
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }
 
 function isOverlapping(
@@ -308,91 +324,103 @@ function scheduleWorkOrderWithCenterConflicts(
 
 export class ReflowService {
   reflow(input: ReflowInput): ReflowResult {
-    const workCenterById = getWorkCenterById(input.workCenters);
-    const workOrderById = getWorkOrderById(input.workOrders);
-    const scheduleOrder = buildDependencyOrder(input.workOrders);
-    const centerScheduleById = new Map<string, CenterScheduleInterval[]>();
-    const updatedById = new Map<string, WorkOrderDocument>();
-    const scheduledEndById = new Map<string, ISODateString>();
-    const changes: WorkOrderScheduleChange[] = [];
+    try {
+      const workCenterById = getWorkCenterById(input.workCenters);
+      const workOrderById = getWorkOrderById(input.workOrders);
+      const scheduleOrder = buildDependencyOrder(input.workOrders);
+      const centerScheduleById = new Map<string, CenterScheduleInterval[]>();
+      const updatedById = new Map<string, WorkOrderDocument>();
+      const scheduledEndById = new Map<string, ISODateString>();
+      const changes: WorkOrderScheduleChange[] = [];
 
-    seedFixedMaintenanceIntervals(input.workOrders, workCenterById, centerScheduleById);
+      seedFixedMaintenanceIntervals(input.workOrders, workCenterById, centerScheduleById);
 
-    for (const workOrderId of scheduleOrder) {
-      const workOrder = workOrderById.get(workOrderId);
-      if (!workOrder) {
-        throw new Error(`Cannot schedule work order ${workOrderId}: missing from input list`);
-      }
+      for (const workOrderId of scheduleOrder) {
+        const workOrder = workOrderById.get(workOrderId);
+        if (!workOrder) {
+          throw new Error(`Cannot schedule work order ${workOrderId}: missing from input list`);
+        }
 
-      const dependencyReadyDate = resolveDependencyReadyDate(workOrder, scheduledEndById);
+        const dependencyReadyDate = resolveDependencyReadyDate(workOrder, scheduledEndById);
 
-      if (workOrder.data.isMaintenance) {
-        if (
-          dependencyReadyDate !== null &&
-          parseUtcDate(workOrder.data.startDate).toMillis() <
-            parseUtcDate(dependencyReadyDate).toMillis()
-        ) {
+        if (workOrder.data.isMaintenance) {
+          if (
+            dependencyReadyDate !== null &&
+            parseUtcDate(workOrder.data.startDate).toMillis() <
+              parseUtcDate(dependencyReadyDate).toMillis()
+          ) {
+            throw new Error(
+              `Cannot satisfy dependencies for maintenance work order ${workOrder.docId}: it is fixed in time and starts before parent completion`,
+            );
+          }
+
+          updatedById.set(workOrder.docId, workOrder);
+          scheduledEndById.set(workOrder.docId, workOrder.data.endDate);
+          continue;
+        }
+
+        const workCenter = workCenterById.get(workOrder.data.workCenterId);
+        if (!workCenter) {
           throw new Error(
-            `Cannot satisfy dependencies for maintenance work order ${workOrder.docId}: it is fixed in time and starts before parent completion`,
+            `Cannot schedule work order ${workOrder.docId}: missing work center ${workOrder.data.workCenterId}`,
           );
         }
 
-        updatedById.set(workOrder.docId, workOrder);
-        scheduledEndById.set(workOrder.docId, workOrder.data.endDate);
-        continue;
-      }
-
-      const workCenter = workCenterById.get(workOrder.data.workCenterId);
-      if (!workCenter) {
-        throw new Error(
-          `Cannot schedule work order ${workOrder.docId}: missing work center ${workOrder.data.workCenterId}`,
+        const schedulingStartDate =
+          dependencyReadyDate === null
+            ? workOrder.data.startDate
+            : maxIsoDate(workOrder.data.startDate, dependencyReadyDate);
+        const centerIntervals = getCenterIntervals(centerScheduleById, workCenter.docId);
+        const updatedWorkOrder = scheduleWorkOrderWithCenterConflicts(
+          workOrder,
+          workCenter,
+          schedulingStartDate,
+          centerIntervals,
         );
+        updatedById.set(updatedWorkOrder.docId, updatedWorkOrder);
+        scheduledEndById.set(updatedWorkOrder.docId, updatedWorkOrder.data.endDate);
+        insertCenterInterval(centerScheduleById, workCenter.docId, {
+          workOrderId: updatedWorkOrder.docId,
+          startDate: updatedWorkOrder.data.startDate,
+          endDate: updatedWorkOrder.data.endDate,
+          isFixed: false,
+        });
+
+        if (isScheduleChanged(workOrder, updatedWorkOrder)) {
+          changes.push(
+            buildChangeRecord(
+              workOrder,
+              updatedWorkOrder,
+              "Adjusted to satisfy dependencies, avoid work-center overlap, and align with shift/maintenance windows.",
+            ),
+          );
+        }
       }
 
-      const schedulingStartDate =
-        dependencyReadyDate === null
-          ? workOrder.data.startDate
-          : maxIsoDate(workOrder.data.startDate, dependencyReadyDate);
-      const centerIntervals = getCenterIntervals(centerScheduleById, workCenter.docId);
-      const updatedWorkOrder = scheduleWorkOrderWithCenterConflicts(
-        workOrder,
-        workCenter,
-        schedulingStartDate,
-        centerIntervals,
-      );
-      updatedById.set(updatedWorkOrder.docId, updatedWorkOrder);
-      scheduledEndById.set(updatedWorkOrder.docId, updatedWorkOrder.data.endDate);
-      insertCenterInterval(centerScheduleById, workCenter.docId, {
-        workOrderId: updatedWorkOrder.docId,
-        startDate: updatedWorkOrder.data.startDate,
-        endDate: updatedWorkOrder.data.endDate,
-        isFixed: false,
-      });
+      const outputInOriginalOrder = input.workOrders
+        .map((workOrder) => updatedById.get(workOrder.docId))
+        .filter((workOrder): workOrder is WorkOrderDocument => Boolean(workOrder));
 
-      if (isScheduleChanged(workOrder, updatedWorkOrder)) {
-        changes.push(
-          buildChangeRecord(
-            workOrder,
-            updatedWorkOrder,
-            "Adjusted to satisfy dependencies, avoid work-center overlap, and align with shift/maintenance windows.",
-          ),
-        );
+      const explanation =
+        changes.length === 0
+          ? "No schedule changes were required. Work orders already satisfy dependencies, work-center conflict, and shift/maintenance constraints."
+          : `Reflow updated ${changes.length} work order(s) by enforcing dependency completion, work-center non-overlap, and shift/maintenance alignment.`;
+
+      const result: ReflowResult = {
+        updatedWorkOrders: outputInOriginalOrder,
+        changes,
+        explanation,
+      };
+
+      validateReflowResult(input, result);
+
+      return result;
+    } catch (error) {
+      if (error instanceof ImpossibleScheduleError) {
+        throw error;
       }
+
+      throw new ImpossibleScheduleError(toErrorMessage(error));
     }
-
-    const outputInOriginalOrder = input.workOrders
-      .map((workOrder) => updatedById.get(workOrder.docId))
-      .filter((workOrder): workOrder is WorkOrderDocument => Boolean(workOrder));
-
-    const explanation =
-      changes.length === 0
-        ? "No schedule changes were required. Work orders already satisfy dependencies, work-center conflict, and shift/maintenance constraints."
-        : `Reflow updated ${changes.length} work order(s) by enforcing dependency completion, work-center non-overlap, and shift/maintenance alignment.`;
-
-    return {
-      updatedWorkOrders: outputInOriginalOrder,
-      changes,
-      explanation,
-    };
   }
 }

@@ -215,6 +215,97 @@ If a work center is configured with `dayOfWeek: 8` or `endHour <= startHour`, St
 
 ---
 
+## Step 8 - Maintenance Constraint Enforcement (Executed)
+
+### What
+Implemented explicit maintenance-rule enforcement in final schedule validation:
+- Added maintenance immutability checks in `src/reflow/constraint-checker.ts`
+- Confirmed maintenance work orders cannot be moved (start/end must remain unchanged)
+- Kept fixed maintenance occupancy in center scheduling flow
+
+### How
+The `ConstraintChecker` now compares each maintenance work order in output against original input values.  
+Any start/end shift for maintenance orders throws an error, which is surfaced as an impossible schedule from the reflow service.
+
+### Why
+Maintenance work orders are hard-fixed tasks in this test.  
+Even if other constraints apply, scheduler output cannot modify their timing.
+
+### Use Case
+If a code change accidentally shifts a maintenance work order by even 1 minute, validation now fails immediately.
+
+---
+
+## Step 9 - Impossible Schedule Error Handling (Executed)
+
+### What
+Added explicit impossible-schedule wrapping in `src/reflow/reflow.service.ts`:
+- Introduced `ImpossibleScheduleError`
+- Wrapped scheduling/validation flow in `try/catch`
+- Converted all unschedulable failures to `No valid schedule: ...` messages
+
+### How
+Any internal failure (missing refs, cycles, invalid constraints, validation failure) is normalized and rethrown as `ImpossibleScheduleError` with a clear reason string.
+
+### Why
+The test expects explicit error output when constraints cannot be satisfied.  
+This step standardizes those failures into a clear contract.
+
+### Use Case
+A circular dependency now returns:
+`No valid schedule: Cannot schedule work orders: circular dependency detected in dependsOnWorkOrderIds`.
+
+---
+
+## Step 10 - Scenario Data Package (Executed)
+
+### What
+Added scenario fixtures in `src/scenarios/reflow-scenarios.ts`:
+- 3 runnable required scenarios:
+  - Delay Cascade
+  - Shift and Maintenance Constraint
+  - Work Center Conflict Resolution
+- 1 additional expected-failure scenario:
+  - Impossible Schedule - Circular Dependency
+
+### How
+Created typed scenario builders for work centers, manufacturing orders, and work orders, then assembled realistic UTC fixtures with dependencies, maintenance windows, and center contention.
+
+### Why
+Submission requires multiple scenarios and explicit demonstration of core constraint behavior.  
+This step creates deterministic inputs for running/demo/testing.
+
+### Use Case
+Running the scenario set demonstrates both required scenario categories and one impossible case path.
+
+---
+
+## Step 11 - Validation Checks and Output Clarity (Executed)
+
+### What
+Implemented schedule correctness validation and scenario runner output:
+- Added `ConstraintChecker` in `src/reflow/constraint-checker.ts` for:
+  - output completeness checks
+  - dependency checks
+  - work-center overlap checks
+  - shift/maintenance execution verification for non-maintenance orders
+  - maintenance immutability checks
+- Integrated checker call inside `ReflowService.reflow(...)`
+- Implemented runnable console runner in `src/index.ts`
+
+### How
+`ReflowService` now validates every produced schedule before returning.  
+`src/index.ts` iterates all scenarios, runs reflow, prints explanation/changes/updated orders, and handles expected-failure scenarios cleanly.
+
+### Why
+This ensures every run is self-verifying and presentation-ready for demos.  
+It also catches regressions early if future steps break hard constraints.
+
+### Use Case
+Running `node dist/index.js` after build prints each scenario status, changes made, and expected failure confirmation for impossible graphs.
+
+---
+
 ## Template For Next Steps
 
 Copy this block for every new completed step:
