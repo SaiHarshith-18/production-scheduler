@@ -132,6 +132,31 @@ If a work order starts outside shift hours, Step 4 now automatically shifts it t
 
 ---
 
+## Step 5 - Dependency-Aware Scheduling (Executed)
+
+### What
+Extended `src/reflow/reflow.service.ts` to enforce dependency constraints:
+- Added dependency graph ordering (topological scheduling order)
+- Added validation for missing parent references
+- Added circular dependency detection with explicit error
+- Added parent-completion gating (child starts only after latest parent end)
+- Added maintenance-order dependency guard (fixed maintenance cannot violate dependency timing)
+- Updated change reason and explanation text to reflect dependency-aware behavior
+
+### How
+Built a topological sort over `dependsOnWorkOrderIds` so parents are always scheduled before children.  
+For each work order, resolved the latest parent end time from already scheduled parent results and used `max(originalStart, latestParentEnd)` as scheduling start input before shift/maintenance alignment.  
+If a maintenance work order has unmet dependency timing, the service now throws a clear error because maintenance cannot be moved.
+
+### Why
+Dependencies are a hard requirement, and Step 4 did not yet enforce parent completion.  
+This step makes scheduling order and start-time gating dependency-safe while keeping work-center conflict handling for the next step.
+
+### Use Case
+If `B` depends on `A`, and `A` ends later than `B` originally planned start, Step 5 now pushes `B` to start after `A` completes, then still aligns `B` to valid shift/maintenance working windows.
+
+---
+
 ## Template For Next Steps
 
 Copy this block for every new completed step:
