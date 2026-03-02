@@ -157,6 +157,64 @@ If `B` depends on `A`, and `A` ends later than `B` originally planned start, Ste
 
 ---
 
+## Step 6 - Work Center Conflict Resolution (Executed)
+
+### What
+Extended `src/reflow/reflow.service.ts` with work-center non-overlap enforcement:
+- Added center occupancy interval model
+- Added fixed maintenance interval seeding on work centers
+- Added overlap detection between candidate schedule and existing center intervals
+- Added iterative push-forward conflict resolution for non-maintenance work orders
+- Added center-interval insertion after successful scheduling to block future overlaps
+- Updated change reason and explanation strings to include work-center conflict handling
+
+### How
+Before scheduling loop execution, fixed maintenance work orders are registered as occupied intervals per work center.  
+When scheduling each non-maintenance work order, the service now:
+1. Computes dependency-gated earliest start
+2. Calculates candidate start/end using shift + maintenance-aware utilities
+3. Checks overlap with existing center intervals
+4. If overlap exists, pushes candidate start to overlap end and retries
+5. Once no overlap exists, commits scheduled interval to center occupancy list
+
+### Why
+A hard constraint requires one active order per work center (no overlaps).  
+This step enforces that constraint directly in scheduling behavior while preserving previously implemented dependency and shift/maintenance logic.
+
+### Use Case
+If two work orders are planned to run at overlapping times on the same work center, Step 6 now shifts the later-scheduled order forward until its execution window no longer intersects any existing center interval.
+
+---
+
+## Step 7 - Shift Logic Hardening and Validation (Executed)
+
+### What
+Extended `src/utils/date-utils.ts` with strict shift-definition validation:
+- Added `validateShiftDefinitions(shifts)` utility
+- Integrated validation into:
+  - `isWithinShift`
+  - `getNextWorkingMoment`
+  - `calculateEndDateWithShifts`
+- Tightened shift filtering to rely on validated shift data
+
+### How
+Validation now checks each shift for:
+1. `dayOfWeek` integer in range `0..6`
+2. `startHour` integer in range `0..23`
+3. `endHour` integer in range `0..23`
+4. `endHour > startHour` (same-day shift model)
+
+If invalid, scheduling throws clear errors before attempting pause/resume calculations.
+
+### Why
+Step 3 introduced shift pause/resume logic, but malformed shift config could still produce ambiguous behavior.  
+This step makes shift handling deterministic and fail-fast, which improves reliability and debuggability of the scheduler.
+
+### Use Case
+If a work center is configured with `dayOfWeek: 8` or `endHour <= startHour`, Step 7 now fails immediately with a descriptive error instead of producing confusing scheduling results.
+
+---
+
 ## Template For Next Steps
 
 Copy this block for every new completed step:

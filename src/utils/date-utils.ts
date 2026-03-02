@@ -58,7 +58,7 @@ function getShiftsForDay(
   const dayOfWeek = toDocumentDayOfWeek(date);
 
   return shifts
-    .filter((shift) => shift.dayOfWeek === dayOfWeek && shift.endHour > shift.startHour)
+    .filter((shift) => shift.dayOfWeek === dayOfWeek)
     .sort((a, b) => a.startHour - b.startHour);
 }
 
@@ -154,6 +154,7 @@ export function formatUtcDate(value: DateTime): ISODateString {
 }
 
 export function isWithinShift(moment: DateTime, shifts: ShiftDefinition[]): boolean {
+  validateShiftDefinitions(shifts);
   return getShiftWindowContaining(moment.toUTC(), shifts) !== null;
 }
 
@@ -170,9 +171,7 @@ export function getNextWorkingMoment(
   shifts: ShiftDefinition[],
   maintenanceWindows: MaintenanceWindow[],
 ): DateTime {
-  if (shifts.length === 0) {
-    throw new Error("Cannot schedule work: no shifts are configured");
-  }
+  validateShiftDefinitions(shifts);
 
   const normalizedMaintenanceWindows = normalizeMaintenanceWindows(maintenanceWindows);
   let cursor = from.toUTC();
@@ -217,9 +216,7 @@ export function calculateEndDateWithShifts(
     return startDate;
   }
 
-  if (shifts.length === 0) {
-    throw new Error("Cannot schedule work: no shifts are configured");
-  }
+  validateShiftDefinitions(shifts);
 
   const normalizedMaintenanceWindows = normalizeMaintenanceWindows(maintenanceWindows);
   let remainingMinutes = durationMinutes;
@@ -278,4 +275,37 @@ export function calculateEndDateWithShifts(
   }
 
   return formatUtcDate(cursor);
+}
+
+export function validateShiftDefinitions(shifts: ShiftDefinition[]): void {
+  if (shifts.length === 0) {
+    throw new Error("Cannot schedule work: no shifts are configured");
+  }
+
+  for (const [index, shift] of shifts.entries()) {
+
+    if (!Number.isInteger(shift.dayOfWeek) || shift.dayOfWeek < 0 || shift.dayOfWeek > 6) {
+      throw new Error(
+        `Invalid shift at index ${index}: dayOfWeek must be an integer between 0 and 6`,
+      );
+    }
+
+    if (!Number.isInteger(shift.startHour) || shift.startHour < 0 || shift.startHour > 23) {
+      throw new Error(
+        `Invalid shift at index ${index}: startHour must be an integer between 0 and 23`,
+      );
+    }
+
+    if (!Number.isInteger(shift.endHour) || shift.endHour < 0 || shift.endHour > 23) {
+      throw new Error(
+        `Invalid shift at index ${index}: endHour must be an integer between 0 and 23`,
+      );
+    }
+
+    if (shift.endHour <= shift.startHour) {
+      throw new Error(
+        `Invalid shift at index ${index}: endHour must be greater than startHour for same-day shifts`,
+      );
+    }
+  }
 }
