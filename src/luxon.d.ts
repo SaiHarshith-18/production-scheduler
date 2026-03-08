@@ -14,6 +14,9 @@ declare module "luxon" {
   }
 
   export class DateTime {
+    diff(effectiveStart: DateTime, arg1: string) {
+      throw new Error("Method not implemented.");
+    }
     static fromISO(value: string, options?: DateTimeFromISOOptions): DateTime;
 
     readonly isValid: boolean;

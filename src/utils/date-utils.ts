@@ -310,7 +310,7 @@ export function calculateAvailableShiftMinutes(
       const effectiveEnd = shiftEnd > end ? end : shiftEnd;
 
       if (effectiveEnd > effectiveStart) {
-        total += Math.floor(effectiveEnd.diff(effectiveStart, "minutes").minutes);
+        total += Math.floor(Interval.fromDateTimes(effectiveStart, effectiveEnd).length("minutes"));
       }
     }
 
