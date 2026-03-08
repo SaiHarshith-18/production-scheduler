@@ -73,8 +73,28 @@ export interface WorkOrderScheduleChange {
   reason: string;
 }
 
+export interface WorkCenterUtilization {
+  workCenterId: string;
+  /** Sum of durationMinutes for all non-maintenance work orders on this center. */
+  scheduledMinutes: number;
+  /** Total shift minutes available in the scheduling window for this center. */
+  availableMinutes: number;
+  /** scheduledMinutes / availableMinutes * 100, rounded to nearest integer. */
+  utilizationPercent: number;
+}
+
+export interface ReflowMetrics {
+  /** Sum of positive movedByMinutes across all changes (total delay introduced). */
+  totalDelayMinutes: number;
+  /** Number of work orders whose schedule changed. */
+  affectedWorkOrderCount: number;
+  /** Per-work-center utilization stats. */
+  utilizationByWorkCenter: WorkCenterUtilization[];
+}
+
 export interface ReflowResult {
   updatedWorkOrders: WorkOrderDocument[];
   changes: WorkOrderScheduleChange[];
   explanation: string;
+  metrics: ReflowMetrics;
 }

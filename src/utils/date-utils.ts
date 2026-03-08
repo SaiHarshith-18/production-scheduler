@@ -278,6 +278,48 @@ export function calculateEndDateWithShifts(
   return formatUtcDate(cursor);
 }
 
+/**
+ * Calculates the total available shift minutes within a date window.
+ * Iterates day by day and intersects each configured shift with [windowStart, windowEnd].
+ * Maintenance windows are not subtracted — this represents raw shift capacity.
+ */
+export function calculateAvailableShiftMinutes(
+  windowStart: ISODateString,
+  windowEnd: ISODateString,
+  shifts: ShiftDefinition[],
+): number {
+  const start = parseUtcDate(windowStart);
+  const end = parseUtcDate(windowEnd);
+
+  if (end <= start) {
+    return 0;
+  }
+
+  let total = 0;
+  let day = start.startOf("day");
+
+  while (day < end) {
+    const dayShifts = getShiftsForDay(day, shifts);
+
+    for (const shift of dayShifts) {
+      const shiftStart = day.plus({ hours: shift.startHour });
+      const shiftEnd = day.plus({ hours: shift.endHour });
+
+      // Intersect shift window with [windowStart, windowEnd]
+      const effectiveStart = shiftStart < start ? start : shiftStart;
+      const effectiveEnd = shiftEnd > end ? end : shiftEnd;
+
+      if (effectiveEnd > effectiveStart) {
+        total += Math.floor(effectiveEnd.diff(effectiveStart, "minutes").minutes);
+      }
+    }
+
+    day = day.plus({ days: 1 });
+  }
+
+  return total;
+}
+
 export function validateShiftDefinitions(shifts: ShiftDefinition[]): void {
   if (shifts.length === 0) {
     throw new Error("Cannot schedule work: no shifts are configured");

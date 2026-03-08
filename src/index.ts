@@ -7,6 +7,14 @@ function printScenarioHeader(title: string, id: string): void {
 
 function printSuccessResult(result: ReturnType<ReflowService["reflow"]>): void {
   console.log("Explanation:", result.explanation);
+  console.log("Metrics:");
+  console.log(`  - Total delay introduced: ${result.metrics.totalDelayMinutes} min`);
+  console.log(`  - Work orders affected: ${result.metrics.affectedWorkOrderCount}`);
+  for (const u of result.metrics.utilizationByWorkCenter) {
+    console.log(
+      `  - ${u.workCenterId}: ${u.scheduledMinutes}/${u.availableMinutes} min scheduled (${u.utilizationPercent}% utilization)`,
+    );
+  }
   console.log("Changes:");
 
   if (result.changes.length === 0) {

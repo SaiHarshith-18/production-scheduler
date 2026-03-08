@@ -1,4 +1,5 @@
 import {
+  calculateAvailableShiftMinutes,
   calculateEndDateWithShifts,
   formatUtcDate,
   getNextWorkingMoment,
@@ -8,6 +9,7 @@ import { validateReflowResult } from "./constraint-checker.js";
 import type {
   ISODateString,
   ReflowInput,
+  ReflowMetrics,
   ReflowResult,
   WorkCenterDocument,
   WorkOrderDocument,
@@ -325,6 +327,66 @@ function scheduleWorkOrderWithCenterConflicts(
   );
 }
 
+function computeMetrics(
+  changes: WorkOrderScheduleChange[],
+  updatedWorkOrders: WorkOrderDocument[],
+  workCenterById: Map<string, WorkCenterDocument>,
+): ReflowMetrics {
+  const totalDelayMinutes = changes.reduce(
+    (sum, change) => sum + Math.max(0, change.movedByMinutes),
+    0,
+  );
+
+  // Group non-maintenance orders by work center to compute per-center utilization.
+  const ordersByCenter = new Map<string, WorkOrderDocument[]>();
+  for (const order of updatedWorkOrders) {
+    if (order.data.isMaintenance) {
+      continue;
+    }
+    const existing = ordersByCenter.get(order.data.workCenterId);
+    if (existing) {
+      existing.push(order);
+    } else {
+      ordersByCenter.set(order.data.workCenterId, [order]);
+    }
+  }
+
+  const utilizationByWorkCenter = [...ordersByCenter.entries()].map(([workCenterId, orders]) => {
+    const workCenter = workCenterById.get(workCenterId);
+    const scheduledMinutes = orders.reduce((sum, o) => sum + o.data.durationMinutes, 0);
+
+    if (!workCenter || orders.length === 0) {
+      return { workCenterId, scheduledMinutes, availableMinutes: 0, utilizationPercent: 0 };
+    }
+
+    // Scheduling window = earliest start to latest end across this center's orders.
+    const windowStart = orders.reduce(
+      (min, o) => (parseUtcDate(o.data.startDate) < parseUtcDate(min) ? o.data.startDate : min),
+      orders[0]?.data.startDate ?? "",
+    );
+    const windowEnd = orders.reduce(
+      (max, o) => (parseUtcDate(o.data.endDate) > parseUtcDate(max) ? o.data.endDate : max),
+      orders[0]?.data.endDate ?? "",
+    );
+
+    const availableMinutes = calculateAvailableShiftMinutes(
+      windowStart,
+      windowEnd,
+      workCenter.data.shifts,
+    );
+    const utilizationPercent =
+      availableMinutes > 0 ? Math.round((scheduledMinutes / availableMinutes) * 100) : 0;
+
+    return { workCenterId, scheduledMinutes, availableMinutes, utilizationPercent };
+  });
+
+  return {
+    totalDelayMinutes,
+    affectedWorkOrderCount: changes.length,
+    utilizationByWorkCenter,
+  };
+}
+
 export class ReflowService {
   reflow(input: ReflowInput): ReflowResult {
     try {
@@ -413,6 +475,7 @@ export class ReflowService {
         updatedWorkOrders: outputInOriginalOrder,
         changes,
         explanation,
+        metrics: computeMetrics(changes, outputInOriginalOrder, workCenterById),
       };
 
       // Defensive post-check to ensure returned schedule still satisfies all hard constraints.
